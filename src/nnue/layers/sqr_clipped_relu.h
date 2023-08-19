@@ -23,6 +23,10 @@
 
 #include "../nnue_common.h"
 
+#if defined(USE_ISPC)
+extern "C" void sqr_clipped_relu_ispc(const std::int32_t*, std::uint8_t* , std::int32_t);
+#endif
+
 namespace Stockfish::Eval::NNUE::Layers {
 
   // Clipped ReLU
@@ -62,6 +66,10 @@ namespace Stockfish::Eval::NNUE::Layers {
     void propagate(
         const InputType* input, OutputType* output) const {
 
+#if defined(USE_ISPC)
+      sqr_clipped_relu_ispc(input, output, InputDimensions);
+      return;
+#else
   #if defined(USE_SSE2)
       constexpr IndexType NumChunks = InputDimensions / 16;
 
@@ -110,6 +118,7 @@ namespace Stockfish::Eval::NNUE::Layers {
             // needs to be accounted for in the trainer
             std::max(0ll, std::min(127ll, (((long long)input[i] * input[i]) >> (2 * WeightScaleBits)) / 128)));
       }
+#endif
     }
   };
 
