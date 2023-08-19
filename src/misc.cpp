@@ -41,6 +41,7 @@ using fun5_t = WORD(*)();
 using fun6_t = bool(*)(HANDLE, DWORD, PHANDLE);
 using fun7_t = bool(*)(LPCSTR, LPCSTR, PLUID);
 using fun8_t = bool(*)(HANDLE, BOOL, PTOKEN_PRIVILEGES, DWORD, PTOKEN_PRIVILEGES, PDWORD);
+
 }
 #endif
 
@@ -65,6 +66,10 @@ using fun8_t = bool(*)(HANDLE, BOOL, PTOKEN_PRIVILEGES, DWORD, PTOKEN_PRIVILEGES
 
 #include "misc.h"
 #include "thread.h"
+
+#if defined(USE_ISPC)
+extern "C" void prefetch_ispc(const void *);
+#endif
 
 using namespace std;
 
@@ -434,6 +439,8 @@ void prefetch(void* addr) {
 
 #  if defined(__INTEL_COMPILER) || defined(_MSC_VER)
   _mm_prefetch((char*)addr, _MM_HINT_T0);
+#  elif defined(USE_ISPC)
+    prefetch_ispc(addr);
 #  else
   __builtin_prefetch(addr);
 #  endif

@@ -23,6 +23,10 @@
 
 #include "../nnue_common.h"
 
+#if defined(USE_ISPC)
+extern "C" void clipped_relu_ispc(const std::int32_t*, std::uint8_t* , std::int32_t);
+#endif
+
 namespace Stockfish::Eval::NNUE::Layers {
 
   // Clipped ReLU
@@ -62,6 +66,10 @@ namespace Stockfish::Eval::NNUE::Layers {
     void propagate(
         const InputType* input, OutputType* output) const {
 
+#if defined(USE_ISPC)
+      clipped_relu_ispc(input, output, InputDimensions);
+      return;
+#else
   #if defined(USE_AVX2)
       if constexpr (InputDimensions % SimdWidth == 0) {
         constexpr IndexType NumChunks = InputDimensions / SimdWidth;
@@ -170,6 +178,7 @@ namespace Stockfish::Eval::NNUE::Layers {
         output[i] = static_cast<OutputType>(
             std::max(0, std::min(127, input[i] >> WeightScaleBits)));
       }
+#endif
     }
   };
 

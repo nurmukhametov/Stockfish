@@ -51,6 +51,10 @@ BINDIR = $(PREFIX)/bin
 ### Built-in benchmark for pgo-builds
 PGOBENCH = $(WINE_PATH) ./$(EXE) bench
 
+### Pattern rule for ispc files
+%.o: %.ispc
+	ispc --pic -O2 --target=host $< -o $*.o
+
 ### Source and object files
 SRCS = benchmark.cpp bitboard.cpp evaluate.cpp main.cpp \
 	misc.cpp movegen.cpp movepick.cpp position.cpp \
@@ -119,6 +123,7 @@ else
    SUPPORTED_ARCH=false
 endif
 
+ispc = no
 optimize = yes
 debug = no
 sanitize = none
@@ -142,6 +147,11 @@ arm_version = 0
 STRIP = strip
 
 ### 2.2 Architecture specific
+
+ifeq ($(ISPC),ON)
+	ispc = yes
+	OBJS := nnue/layers/kernels.o $(OBJS)
+endif
 
 ifeq ($(findstring x86,$(ARCH)),x86)
 
@@ -699,6 +709,10 @@ ifeq ($(pext),yes)
 	endif
 endif
 
+ifeq ($(ispc),yes)
+	CXXFLAGS += -DUSE_ISPC
+endif
+
 ### 3.7.1 Try to include git commit sha for versioning
 GIT_SHA = $(shell git rev-parse HEAD 2>/dev/null | cut -c 1-8)
 ifneq ($(GIT_SHA), )
@@ -871,7 +885,7 @@ clean: objclean profileclean
 
 # clean binaries and objects
 objclean:
-	@rm -f stockfish stockfish.exe *.o ./syzygy/*.o ./nnue/*.o ./nnue/features/*.o
+	@rm -f stockfish stockfish.exe *.o ./syzygy/*.o ./nnue/*.o ./nnue/features/*.o ./nnue/layers/kernels.o
 
 # clean auxiliary profiling files
 profileclean:
@@ -966,6 +980,7 @@ config-sanity: net
 	@echo "dotprod: '$(dotprod)'"
 	@echo "arm_version: '$(arm_version)'"
 	@echo "target_windows: '$(target_windows)'"
+	@echo "ispc: '$(ispc)'"
 	@echo ""
 	@echo "Flags:"
 	@echo "CXX: $(CXX)"
