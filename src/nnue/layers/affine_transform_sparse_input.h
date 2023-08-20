@@ -196,6 +196,24 @@ namespace Stockfish::Eval::NNUE::Layers {
     void propagate(
         const InputType* input, OutputType* output) const {
 
+#if defined(USE_ISPC)
+      static_assert(OutputDimensions % 16 == 0 || OutputDimensions == 1);
+
+      if constexpr (OutputDimensions == 16 && InputDimensions == 1024 && PaddedInputDimensions == 1024) {
+        sparse_affine_transform_1024_1024_16_ispc(input, weights, biases, output);
+      }
+      else if constexpr (OutputDimensions == 32 && InputDimensions == 30 && PaddedInputDimensions == 32) {
+        sparse_affine_transform_30_32_32_ispc(input, weights, biases, output);
+      }
+      else if constexpr (OutputDimensions > 1) {
+        sparse_affine_transform_ispc(input, weights, biases, output, InputDimensions,
+                               PaddedInputDimensions, OutputDimensions);
+      }
+      else {
+        output[0] = biases[0] + sparse_affine_transform1_ispc(weights, input, InputDimensions);
+      }
+#else
+
 #if (USE_SSSE3 | (USE_NEON >= 8))
 #if defined (USE_AVX512)
       using invec_t = __m512i;
@@ -260,6 +278,7 @@ namespace Stockfish::Eval::NNUE::Layers {
         InputDimensions,
         PaddedInputDimensions,
         OutputDimensions>(output, weights, biases, input);
+#endif
 #endif
     }
 

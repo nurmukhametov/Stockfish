@@ -27,6 +27,25 @@
 #include "../nnue_common.h"
 #include "simd.h"
 
+#if defined(USE_ISPC)
+extern "C" void affine_transform_ispc(const uint8_t input[], const int8_t weights[], const int biases[],
+    int output[], int InputDimensions,  int PaddedInputDimensions, int OutputDimensions);
+extern "C" int affine_transform1_ispc(const int8_t weights[], const uint8_t input[], int InputDimensions);
+extern "C" void affine_transform_1024_1024_16_ispc(const uint8_t input[], const int8_t weights[],
+                                          const int biases[], int output[]);
+
+extern "C" void affine_transform_30_32_32_ispc(const uint8_t input[], const int8_t weights[],
+                                      const int biases[], int output[]);
+extern "C" void sparse_affine_transform_ispc(const uint8_t input[], const int8_t weights[], const int biases[],
+    int output[], int InputDimensions,  int PaddedInputDimensions, int OutputDimensions);
+extern "C" int sparse_affine_transform1_ispc(const int8_t weights[], const uint8_t input[], int InputDimensions);
+extern "C" void sparse_affine_transform_1024_1024_16_ispc(const uint8_t input[], const int8_t weights[],
+                                          const int biases[], int output[]);
+
+extern "C" void sparse_affine_transform_30_32_32_ispc(const uint8_t input[], const int8_t weights[],
+                                      const int biases[], int output[]);
+#endif
+
 /*
   This file contains the definition for a fully connected layer (aka affine transform).
 
@@ -210,6 +229,23 @@ namespace Stockfish::Eval::NNUE::Layers {
     void propagate(
         const InputType* input, OutputType* output) const {
 
+#if defined(USE_ISPC)
+      static_assert(OutputDimensions % 16 == 0 || OutputDimensions == 1);
+
+      if constexpr (OutputDimensions == 16 && InputDimensions == 1024 && PaddedInputDimensions == 1024) {
+        affine_transform_1024_1024_16_ispc(input, weights, biases, output);
+      }
+      else if constexpr (OutputDimensions == 32 && InputDimensions == 30 && PaddedInputDimensions == 32) {
+        affine_transform_30_32_32_ispc(input, weights, biases, output);
+      }
+      else if constexpr (OutputDimensions > 1) {
+        affine_transform_ispc(input, weights, biases, output, InputDimensions,
+                               PaddedInputDimensions, OutputDimensions);
+      }
+      else {
+        output[0] = biases[0] + affine_transform1_ispc(weights, input, InputDimensions);
+      }
+#else
 #if defined (USE_AVX512)
       using vec_t = __m512i;
       #define vec_setzero _mm512_setzero_si512
@@ -290,6 +326,7 @@ namespace Stockfish::Eval::NNUE::Layers {
         InputDimensions,
         PaddedInputDimensions,
         OutputDimensions>(output, weights, biases, input);
+#endif
 #endif
     }
 

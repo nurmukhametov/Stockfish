@@ -55,6 +55,9 @@ PGOBENCH = $(WINE_PATH) ./$(EXE) bench
 %.o: %.ispc
 	ispc --pic -O2 --target=host $< -o $*.o
 
+nnue/layers/sparse_kernels.o: nnue/layers/sparse_kernels.ispc
+	ispc --pic -O2 --target=avx2-i8x32 $< -o $*.o
+
 ### Source and object files
 SRCS = benchmark.cpp bitboard.cpp evaluate.cpp main.cpp \
 	misc.cpp movegen.cpp movepick.cpp position.cpp \
@@ -150,7 +153,7 @@ STRIP = strip
 
 ifeq ($(ISPC),ON)
 	ispc = yes
-	OBJS := nnue/layers/kernels.o $(OBJS)
+	OBJS := nnue/layers/kernels.o nnue/layers/sparse_kernels.o $(OBJS)
 endif
 
 ifeq ($(findstring x86,$(ARCH)),x86)
