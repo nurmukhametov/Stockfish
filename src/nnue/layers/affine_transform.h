@@ -150,9 +150,12 @@ namespace Stockfish::Eval::NNUE::Layers {
 
 # else
       std::int32_t sum = biases[i];
+      printf("offset: %i\n", offset);
       for (IndexType j = 0; j < InputDimensions; ++j) {
+        printf("weights[%i] = %i, in[%i] = %i\n", offset+j, weights[offset+j], j, input[j]);
         sum += weights[offset + j] * input[j];
       }
+      printf("biases[%i] = %i, sum = %i\n", i, biases[i], sum);
       output[i] = sum;
 # endif
     }

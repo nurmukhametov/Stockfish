@@ -28,10 +28,15 @@
 #include "../nnue_common.h"
 #include "affine_transform.h"
 #include "simd.h"
+#include <inttypes.h>
 
 /*
   This file contains the definition for a fully connected layer (aka affine transform) with block sparse input.
 */
+
+
+extern "C" void ispc_space_affine_ptr(const void *input, void *output, const void *weights,
+                                      const void *biases, const void *lookup_table);
 
 namespace Stockfish::Eval::NNUE::Layers {
 
@@ -89,6 +94,10 @@ namespace Stockfish::Eval::NNUE::Layers {
     constexpr IndexType InputsPerChunk = ChunkSize / InputSimdWidth;
     constexpr IndexType OutputsPerChunk = ChunkSize / 8;
 
+    // printf("ChunkSize: %i\n", ChunkSize);
+    // printf("InputsPerChunk: %i\n", InputsPerChunk);
+    // printf("OutputsPerChunk: %i\n", OutputsPerChunk);
+
     const auto inputVector = reinterpret_cast<const vec_t*>(input);
     IndexType count = 0;
     vec128_t base = vec128_zero;
@@ -106,6 +115,7 @@ namespace Stockfish::Eval::NNUE::Layers {
       {
         const auto lookup = (nnz >> (j * 8)) & 0xFF;
         const auto offsets = vec128_load(reinterpret_cast<const vec128_t*>(&lookup_indices[lookup]));
+        // printf("b: %i base: ?, ptr:%" PRIi16 "\n", lookup, lookup_indices[lookup + 0]);
         vec128_storeu(reinterpret_cast<vec128_t*>(out + count), vec128_add(base, offsets));
         count += popcount(lookup);
         base = vec128_add(base, increment);
@@ -197,21 +207,8 @@ namespace Stockfish::Eval::NNUE::Layers {
         const InputType* input, OutputType* output) const {
 
 #if defined(USE_ISPC)
-      static_assert(OutputDimensions % 16 == 0 || OutputDimensions == 1);
-
-      if constexpr (OutputDimensions == 16 && InputDimensions == 1024 && PaddedInputDimensions == 1024) {
-        sparse_affine_transform_1024_1024_16_ispc(input, weights, biases, output);
-      }
-      else if constexpr (OutputDimensions == 32 && InputDimensions == 30 && PaddedInputDimensions == 32) {
-        sparse_affine_transform_30_32_32_ispc(input, weights, biases, output);
-      }
-      else if constexpr (OutputDimensions > 1) {
-        sparse_affine_transform_ispc(input, weights, biases, output, InputDimensions,
-                               PaddedInputDimensions, OutputDimensions);
-      }
-      else {
-        output[0] = biases[0] + sparse_affine_transform1_ispc(weights, input, InputDimensions);
-      }
+      // printf("USE_ISPC\n");
+      ispc_space_affine_ptr(input, output, weights, biases, &lookup_indices);
 #else
 
 #if (USE_SSSE3 | (USE_NEON >= 8))
@@ -250,8 +247,29 @@ namespace Stockfish::Eval::NNUE::Layers {
 
       const auto input32 = reinterpret_cast<const std::int32_t*>(input);
 
+      // printf("InputDimensions: %i\n", InputDimensions);
+      // for (int i = 0; i < InputDimensions; i++) {
+      //     printf("%" PRIu8 " ", input[i]);
+      // }
+      // printf("\n");
+
+      // printf("input32: \n");
+      // for (auto i = 0; i < InputDimensions / 4; i++) {
+      //     printf("%i, ", input32[i]);
+      // }
+      // printf("\n");
+
       // Find indices of nonzero 32bit blocks
       find_nnz<NumChunks>(input32, nnz, count);
+
+      // printf("count of nnz: %i\n", count);
+      // for (auto i = 0; i < count; i++) {
+      //     printf("%" PRIi16 ", ", nnz[i]);
+      // }
+      // printf("\n");
+
+      // printf("a ChunkSize: %i\n", ChunkSize);
+      // printf("a NumRegs: %i\n", NumRegs);
 
       const outvec_t* biasvec = reinterpret_cast<const outvec_t*>(biases);
       outvec_t acc[NumRegs];
@@ -263,13 +281,39 @@ namespace Stockfish::Eval::NNUE::Layers {
         const auto i = nnz[j];
         const invec_t in = vec_set_32(input32[i]);
         const auto col = reinterpret_cast<const invec_t*>(&weights[i * OutputDimensions * ChunkSize]);
-        for (IndexType k = 0; k < NumRegs; ++k)
+        // std::int32_t *a = (std::int32_t*)&acc[0];
+        // printf("acc: %i, %i, %i, %i, %i, %i, %i, %i,| %i, %i, %i, %i, %i, %i, %i, %i\n", a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], a[9], a[10], a[11], a[12], a[13], a[14], a[15]);
+        // std::int32_t *c = (std::int32_t*)col;
+        // printf("col: %i, %i, %i, %i, %i, %i, %i, %i,| %i, %i, %i, %i, %i, %i, %i, %i\n", c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8], c[9], c[10], c[11], c[12], c[13], c[14], c[15]);
+        // std::int32_t *d = (std::int32_t*)&in;
+        // printf("in: %i, %i, %i, %i, %i, %i, %i, %i\n", d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7]);
+        for (IndexType k = 0; k < NumRegs; ++k) {
+          // acc[k] = _mm256_setzero_si256();
           vec_add_dpbusd_32(acc[k], in, col[k]);
+        }
       }
 
       outvec_t* outptr = reinterpret_cast<outvec_t*>(output);
       for (IndexType k = 0; k < NumRegs; ++k)
         outptr[k] = acc[k];
+
+      // printf("OutputDimensions: %i\n", OutputDimensions);
+      // for (int i = 0; i < OutputDimensions; i++) {
+      //     printf("%" PRIi32 ", ", output[i]);
+      // }
+      // printf("\n");
+      // printf("biases: \n");
+      // for (int i = 0; i < OutputDimensions; i++) {
+      //     printf("%" PRIi32 ", ", biases[i]);
+      // }
+      // printf("\n");
+      // printf("PaddedInputDimensions: %i\n", PaddedInputDimensions);
+      // printf("PaddedOutputDimensions: %i\n", PaddedOutputDimensions);
+      // printf("weights: \n");
+      // for (int i = 0; i < OutputDimensions * InputDimensions; i++) {
+      //     printf("%" PRIi8 ", ", weights[i]);
+      // }
+      // printf("\n");
 # undef vec_set_32
 # undef vec_add_dpbusd_32
 #else
